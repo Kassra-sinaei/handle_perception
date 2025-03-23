@@ -2,7 +2,7 @@
 # filepath: ~/alphaz_ws/src/handle_detection/scripts/handle_detection_node.py
 
 import rospy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image as rosImage
 from cv_bridge import CvBridge
 import os
 import sys
@@ -13,9 +13,13 @@ from PIL import Image
 import torch
 
 import detectron2
+from detectron2.data import MetadataCatalog
 from detectron2.utils.logger import setup_logger
 
-sys.path.insert(0, 'third_party/CenterNet2/')
+
+center_net_path = os.path.join(os.path.dirname(__file__), 'Detic/third_party/CenterNet2')
+sys.path.insert(0, os.path.abspath(center_net_path))
+
 
 # import some common detectron2 utilities
 from detectron2.engine import DefaultPredictor
@@ -122,7 +126,7 @@ class HandleDetectionNode:
 
         # Parameters
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        self.classes = "handle"
+        self.classes = ["handle"]
         self.threshold = 0.3
 
         # Initialize predictors
@@ -135,32 +139,36 @@ class HandleDetectionNode:
         self.bridge = CvBridge()
 
         # Subscribers
-        rospy.Subscriber("/camera_3/color/image_raw", Image, self.image_callback)
+        rospy.Subscriber("/camera_0/color/image_raw", rosImage, self.image_callback)
 
         # OpenCV Window
         cv2.namedWindow("Handle Detection", cv2.WINDOW_NORMAL)
 
     def image_callback(self, msg):
-        try:
+        # try:
             # Convert ROS Image to OpenCV format
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-
+            if cv_image is None or cv_image.size == 0:
+                rospy.logerr("cv_image is empty after conversion.")
+                return
+            
             # Perform detection
-            boxes, class_idx = Detic(cv_image, self.metadata, self.detic_predictor, visualize=False)
+            boxes = [1, 2]
+            # boxes, class_idx = Detic(cv_image, self.metadata, self.detic_predictor, visualize=False)
             if len(boxes) > 0:
-                masks = SAM(cv_image, boxes, class_idx, self.metadata, self.sam_predictor)
-                classes = [self.metadata.thing_classes[idx] for idx in class_idx]
+                # masks = SAM(cv_image, boxes, class_idx, self.metadata, self.sam_predictor)
+                # classes = [self.metadata.thing_classes[idx] for idx in class_idx]
 
                 # Visualize results
-                visualize_output(cv_image, masks, boxes, classes, None, mask_only=False)
+                # visualize_output(cv_image, masks, boxes, classes, None, mask_only=False)
 
                 # Show in OpenCV window
                 cv2.imshow("Handle Detection", cv_image)
-                cv2.waitKey(1)
+                # cv2.waitKey(1)
             else:
                 rospy.loginfo("No handles detected.")
-        except Exception as e:
-            rospy.logerr(f"Error in image_callback: {e}")
+        # except Exception as e:
+        #     rospy.logerr(f"Error in image_callback: {e}")
 
     def run(self):
         rospy.spin()
