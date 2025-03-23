@@ -3,6 +3,7 @@
 
 import rospy
 from sensor_msgs.msg import Image as rosImage
+
 from cv_bridge import CvBridge
 import os
 import sys
@@ -13,7 +14,6 @@ from PIL import Image
 import torch
 
 import detectron2
-from detectron2.data import MetadataCatalog
 from detectron2.utils.logger import setup_logger
 
 
@@ -25,12 +25,15 @@ sys.path.insert(0, os.path.abspath(center_net_path))
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2.utils.visualizer import Visualizer
-# from detectron2.data import MetadataCatalog, DatasetCatalog
+from detectron2.data import MetadataCatalog, DatasetCatalog
+from Detic.detic.modeling.text.text_encoder import build_text_encoder
+from Detic.detic.modeling.utils import reset_cls_test
 
 
 from centernet.config import add_centernet_config
 from Detic.detic.config import add_detic_config
 from segment_anything import sam_model_registry, SamPredictor
+from geometry_msgs.msg import Point
 
 ############################################
 def DETIC_predictor():
@@ -117,6 +120,27 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))
 
+def custom_vocab(detic_predictor, classes, threshold=0.3):
+    vocabulary = 'custom'
+    metadata = MetadataCatalog.get("__unused2")
+    metadata.thing_classes = classes # Change here to try your own vocabularies!
+    classifier = get_clip_embeddings(metadata.thing_classes)
+    num_classes = len(metadata.thing_classes)
+    reset_cls_test(detic_predictor.model, classifier, num_classes)
+
+    # Reset visualization threshold
+    output_score_threshold = threshold
+    for cascade_stages in range(len(detic_predictor.model.roi_heads.box_predictor)):
+        detic_predictor.model.roi_heads.box_predictor[cascade_stages].test_score_thresh = output_score_threshold
+    return metadata
+
+def get_clip_embeddings(vocabulary, prompt='a '):
+    text_encoder = build_text_encoder(pretrain=True)
+    text_encoder.eval()
+    texts = [prompt + x for x in vocabulary]
+    emb = text_encoder(texts).detach().permute(1, 0).contiguous().cpu()
+    return emb
+
 ############################################
 
 
@@ -132,44 +156,67 @@ class HandleDetectionNode:
         # Initialize predictors
         self.detic_predictor = DETIC_predictor()
         self.sam_predictor = SAM_predictor(self.device)
-        self.metadata = MetadataCatalog.get("__unused2")
-        self.metadata.thing_classes = self.classes
+        self.metadata = custom_vocab(self.detic_predictor, self.classes, self.threshold)
 
         # CV Bridge
         self.bridge = CvBridge()
 
         # Subscribers
         rospy.Subscriber("/camera_0/color/image_raw", rosImage, self.image_callback)
+        rospy.Subscriber("/camera_0/depth/image_raw", rosImage, self.depth_callback)
+        # Publisher
+        self.handle_detection_pub = rospy.Publisher("/handle_detection_head", rosImage, queue_size=1)
+        self.grip_publisher = rospy.Publisher("/grip_point", Point, queue_size=1)
 
+        self.depth_image = None
         # OpenCV Window
-        cv2.namedWindow("Handle Detection", cv2.WINDOW_NORMAL)
+        # cv2.namedWindow("Handle Detection", cv2.WINDOW_NORMAL)
+        self.ppx = 320.0
+        self.ppy = 240.0
+        self.fx = 617.0
+        self.fy = 617.0
+
+    def depth_callback(self, msg):
+        # Convert ROS Image to OpenCV format
+        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+        self.depth_image = np.array(cv_image, dtype=np.float32)
+        pass
 
     def image_callback(self, msg):
-        # try:
-            # Convert ROS Image to OpenCV format
-            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            if cv_image is None or cv_image.size == 0:
-                rospy.logerr("cv_image is empty after conversion.")
-                return
-            
-            # Perform detection
-            boxes = [1, 2]
-            # boxes, class_idx = Detic(cv_image, self.metadata, self.detic_predictor, visualize=False)
-            if len(boxes) > 0:
-                # masks = SAM(cv_image, boxes, class_idx, self.metadata, self.sam_predictor)
-                # classes = [self.metadata.thing_classes[idx] for idx in class_idx]
+        # Convert ROS Image to OpenCV format
+        cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        # Perform detection
+        image = np.array(cv_image, dtype=np.uint8)
+        boxes, class_idx = Detic(image, self.metadata, self.detic_predictor, visualize=False)
 
-                # Visualize results
-                # visualize_output(cv_image, masks, boxes, classes, None, mask_only=False)
+        if len(boxes) > 0:
+            masks = SAM(cv_image, boxes, class_idx, self.metadata, self.sam_predictor)
+            classes = [self.metadata.thing_classes[idx] for idx in class_idx]
+            mask = masks[0].cpu().numpy()
+            mask = (mask * 255).astype(np.uint8).squeeze()
 
-                # Show in OpenCV window
-                cv2.imshow("Handle Detection", cv_image)
-                # cv2.waitKey(1)
-            else:
-                rospy.loginfo("No handles detected.")
-        # except Exception as e:
-        #     rospy.logerr(f"Error in image_callback: {e}")
+            # Compute the center of the mask
+            mask_indices = np.argwhere(mask > 0)
+            y_center, x_center = np.mean(mask_indices, axis=0).astype(int)
 
+            # Publish the mask image
+            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding="mono8")
+            self.handle_detection_pub.publish(mask_msg)
+
+            # Convert depth to 3D point
+            x, y, z = self.depth2point(x_center, y_center, self.depth_image[y_center, x_center])
+            point_msg = Point(x, y, z)
+            self.grip_publisher.publish(point_msg)
+        else:
+            rospy.loginfo("No handles detected.")
+        pass
+    
+    def depth2point(self, x, y, depth_value):
+        x = (x - self.ppx) / self.fx * depth_value
+        y = (y - self.ppy) / self.fy * depth_value
+        z = depth_value
+        return x, y, z
+    
     def run(self):
         rospy.spin()
         cv2.destroyAllWindows()
