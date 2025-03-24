@@ -162,7 +162,7 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/detection_node.py
-  scripts/detic_sam.py
+  # scripts/detic_sam.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

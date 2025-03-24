@@ -212,9 +212,12 @@ class HandleDetectionNode:
         pass
     
     def depth2point(self, x, y, depth_value):
-        x = (x - self.ppx) / self.fx * depth_value
-        y = (y - self.ppy) / self.fy * depth_value
-        z = depth_value
+        # x = (x - self.ppx) / self.fx * depth_value
+        # y = (y - self.ppy) / self.fy * depth_value
+        # z = depth_value
+        x = - (x - self.ppx) / self.fx * depth_value
+        z = - (y - self.ppy) / self.fy * depth_value
+        y = -depth_value
         return x, y, z
     
     def run(self):
