@@ -81,6 +81,14 @@ class MotionControllerNode:
                 rospy.logerr(f"Failed to close gripper: {e}")
                 return False, "Failed to close gripper."
             
+    def handle_arm_switch(self, req):
+        if self.active_arm == 'right':
+            self.active_arm = 'left'
+            rospy.loginfo("Switched to left arm.")
+        else:
+            self.active_arm = 'right'
+            rospy.loginfo("Switched to right arm.")
+        pass
     
     def run(self):
         rospy.spin()

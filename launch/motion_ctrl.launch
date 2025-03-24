@@ -1,8 +1,6 @@
 <launch>
     <!-- Launch the rm_<arm_type>_driver.launch file from the rm_driver package -->
-    <include file="$(find rm_driver)/launch/rm_$(arg arm_type)_driver.launch">
-        <!-- Pass any necessary arguments here -->
-    </include>
+    <include file="$(find arm_driver)/launch/dual_arm_65_driver.launch"/>
 
     <!-- Launch the motion_controller.py node from the db_perception package -->
     <node pkg="db_perception" type="motion_controller.py" name="motion_controller" output="screen" />
