@@ -5,8 +5,10 @@ import rospy
 from geometry_msgs.msg import Point
 from std_srvs.srv import SetBool
 from std_srvs.srv import Empty
-from dual_arm_msgs.msg import MoveJ_P
 import numpy as np
+
+from dual_arm_msgs.msg import MoveJ_P
+from dh_ag95_gripper import ag95_gripper
 
 class MotionControllerNode:
     def __init__(self):
@@ -28,12 +30,13 @@ class MotionControllerNode:
         self.r_arm_move = rospy.Publisher('/r_arm/rm_driver/MoveJ_P_Cmd', MoveJ_P, queue_size=1)
         self.l_arm_move = rospy.Publisher('/l_arm/rm_driver/MoveJ_P_Cmd', MoveJ_P, queue_size=1)
 
-        self.arm_switch_service = ros
-
+        self.arm_switch_service = rospy.Service('/arm_switch', Empty, self.handle_arm_switch)
         self.grasp_r_service = rospy.Service('/grasp_r', SetBool, self.handle_grasp_r)
 
+        self.right_gripper = ag95_gripper()
+
+
         self.active_arm = 'right'
-        # TODO: write a service for changing the active arm
 
         rospy.loginfo("Motion Controller Node has started.")
 
@@ -42,6 +45,12 @@ class MotionControllerNode:
         rospy.loginfo(f"Received grasp point: {msg}")
 
     def handle_grasp_r(self, req):
+        if self.active_arm == 'right':
+            self.right_gripper.open()
+            self.right_gripper.open()
+        else:
+            pass
+
         if self.handle_pose is None:
             return False, "Grasp point not detected yet."
         else:
@@ -62,6 +71,16 @@ class MotionControllerNode:
                     self.l_arm_move.publish(msg)
             except:
                 return False, "Failed to move right arm to grasp point."
+            
+            # Close the gripper
+            try:
+                self.right_gripper.close()
+                rospy.loginfo("Gripper closed.")
+                return True, "Grasp Successful."
+            except Exception as e:
+                rospy.logerr(f"Failed to close gripper: {e}")
+                return False, "Failed to close gripper."
+            
     
     def run(self):
         rospy.spin()
