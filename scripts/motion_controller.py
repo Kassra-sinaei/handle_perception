@@ -14,7 +14,6 @@ class MotionControllerNode:
     def __init__(self):
         rospy.init_node('motion_controller', anonymous=True)
         self.subscriber = rospy.Subscriber('/grasp_point', Point, self.grasp_point_callback)
-        rospy.loginfo("Motion Controller Node has started and is listening to /grasp_point topic.")
         
         self.handle_pose = None
         self.camera2r_base = np.array([[ 0.70738827,  0.0,          0.70682518,  0.2099817 ],
@@ -55,22 +54,34 @@ class MotionControllerNode:
             return False, "Grasp point not detected yet."
         else:
             # Move selected arm to grasp point  
-            try:
-                msg = MoveJ_P()
-                msg.speed = 0.3
-                msg.trajectory_connect = False
-                if self.active_arm == 'right':
-                    target = self.camera2r_base @ np.append(self.handle_pose, 1)        # transform to base frame of selected arm
-                    target = target[:3]                                                 # remove the fourth element
-                    msg.Pose = target.tolist()
-                    self.r_arm_move.publish(msg)
-                else:
-                    target = self.camera2l_base @ np.append(self.handle_pose, 1)        # transform to base frame of selected arm
-                    target = target[:3]                                                 # remove the fourth element
-                    msg.Pose = target.tolist()
-                    self.l_arm_move.publish(msg)
-            except:
-                return False, "Failed to move right arm to grasp point."
+            # try:
+            msg = MoveJ_P()
+            msg.speed = 0.3
+            msg.trajectory_connect = 1
+            if self.active_arm == 'right':
+                target = self.camera2r_base @ np.append(self.handle_pose, 1)        # transform to base frame of selected arm
+                target = target[:3]                                                 # remove the fourth element
+                msg.Pose.position.x = target[0]
+                msg.Pose.position.y = target[1]
+                msg.Pose.position.z = target[2]
+                msg.Pose.orientation.x = 0.0
+                msg.Pose.orientation.y = 0.0
+                msg.Pose.orientation.z = 0.0
+                msg.Pose.orientation.w = 1.0
+                self.r_arm_move.publish(msg)
+            else:
+                target = self.camera2l_base @ np.append(self.handle_pose, 1)        # transform to base frame of selected arm
+                target = target[:3]                                                 # remove the fourth element
+                msg.Pose.position.x = target[0]
+                msg.Pose.position.y = target[1]
+                msg.Pose.position.z = target[2]
+                msg.Pose.orientation.x = 0.0
+                msg.Pose.orientation.y = 0.0
+                msg.Pose.orientation.z = 0.0
+                msg.Pose.orientation.w = 1.0
+                self.l_arm_move.publish(msg)
+            # except:
+            #     return False, "Failed to move right arm to grasp point."
             
             # Close the gripper
             try:
