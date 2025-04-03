@@ -32,7 +32,6 @@ class ag95_gripper:
         #point6_00 = '{"command":"write_single_register","port":1,"address":257,"data":30, "device":1}\r\n'
         #_ = send_cmd(self.client, cmd_6axis=point6_00)
         #time.sleep(2)
-        #print(" 设置30% 力值 （写操作）")
 
     def send_cmd(self, client, cmd_6axis):
         client.send(cmd_6axis.encode('utf-8'))
@@ -45,7 +44,7 @@ class ag95_gripper:
     def open(self):
         point6_00 = '{"command":"write_single_register","port":1,"address":259,"data":1000, "device":1}\r\n'
         _ = self.send_cmd(self.client, cmd_6axis=point6_00)
-        time.sleep(0.001)
+        time.sleep(0.1)
 
     def semi_open(self):
         point6_00 = '{"command":"write_single_register","port":1,"address":259,"data":500, "device":1}\r\n'
@@ -64,3 +63,7 @@ class ag95_gripper:
             self.semi_open()
         elif command == 1000:
             self.open()
+
+if __name__ == '__main__':
+    gripper = ag95_gripper()
+    gripper.command(1000)
